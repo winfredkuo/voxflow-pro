@@ -82,7 +82,7 @@ function App() {
         email: currentUser.email,
         displayName: currentUser.displayName,
         photoURL: currentUser.photoURL,
-        quota: 60,
+        quota: 10,
         createdAt: new Date().toISOString()
       });
     }
