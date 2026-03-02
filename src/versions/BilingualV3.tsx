@@ -17,7 +17,7 @@ const TARGET_LANGUAGES = [
   { label: '德文 (German)', value: 'German' },
 ];
 
-export default function BilingualV3({ user }: { user: User | null }) {
+export default function BilingualV3({ user, onOpenQuotaModal }: { user: User | null; onOpenQuotaModal: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [targetLang, setTargetLang] = useState('English');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -59,6 +59,7 @@ export default function BilingualV3({ user }: { user: User | null }) {
       const durationMinutes = await getAudioDuration(file);
       
       if (currentQuota < durationMinutes) {
+        onOpenQuotaModal(); // 觸發彈窗
         throw new Error(`額度不足。需 ${durationMinutes} 分鐘，剩餘 ${currentQuota} 分鐘。`);
       }
 
@@ -83,7 +84,7 @@ export default function BilingualV3({ user }: { user: User | null }) {
       const translatedSrt = segments.map((seg, index) => `${index + 1}\n${seg.start} --> ${seg.end}\n${seg.translated}\n`).join('\n');
       setResults({ original: originalSrt, translated: translatedSrt });
       saveToHistory(file.name, originalSrt, translatedSrt, targetLang);
-      setProgress('完成並已扣除額度！');
+      setProgress('完成！');
     } catch (err: any) { setError(err.message || "發生錯誤。"); } finally { setIsProcessing(false); }
   };
 

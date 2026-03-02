@@ -1,55 +1,45 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileAudio, Download, Loader2, CheckCircle2, AlertCircle, FileText, ShieldCheck, Coins } from 'lucide-react';
+import { Upload, FileAudio, Download, Loader2, CheckCircle2, AlertCircle, FileText, ShieldCheck } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { db } from '../lib/firebase'; // 引入資料庫
+import { db } from '../lib/firebase';
 import { doc, getDoc, updateDoc, increment } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 
 interface Subtitle { start: string; end: string; text: string; }
 
-// 新增 props 接收 user
-export default function StableV1({ user }: { user: User | null }) {
+export default function StableV1({ user, onOpenQuotaModal }: { user: User | null; onOpenQuotaModal: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [srtContent, setSrtContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string>('');
-  const [userQuota, setUserQuota] = useState<number>(0); // 用來檢查按鈕狀態
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 取得音檔分鐘數
   const getAudioDuration = (file: File): Promise<number> => {
     return new Promise((resolve) => {
       const audio = new Audio();
       audio.src = URL.createObjectURL(file);
-      audio.onloadedmetadata = () => {
-        const minutes = Math.ceil(audio.duration / 60);
-        resolve(minutes);
-      };
+      audio.onloadedmetadata = () => resolve(Math.ceil(audio.duration / 60));
     });
   };
 
   const processAudio = async () => {
     if (!file || !user) return;
-    
     setIsProcessing(true);
     setError(null);
     setProgress('正在檢查額度...');
 
     try {
-      // 1. 再次從資料庫確認最新額度
       const userDocRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(userDocRef);
       const currentQuota = docSnap.data()?.quota || 0;
-      
-      // 2. 計算音檔時長
       const durationMinutes = await getAudioDuration(file);
       
       if (currentQuota < durationMinutes) {
-        throw new Error(`額度不足。此音檔需 ${durationMinutes} 分鐘額度，您目前僅剩 ${currentQuota} 分鐘。`);
+        onOpenQuotaModal(); // 觸發彈窗
+        throw new Error(`額度不足。此音檔需 ${durationMinutes} 分鐘。`);
       }
 
-      // 3. 開始轉錄流程
       const reader = new FileReader();
       const base64Data = await new Promise<string>((resolve) => {
         reader.readAsDataURL(file);
@@ -70,14 +60,11 @@ export default function StableV1({ user }: { user: User | null }) {
       const textResult = data.candidates[0].content.parts[0].text;
       let result: Subtitle[] = JSON.parse(textResult);
 
-      // 4. 轉錄成功後，扣除額度
-      await updateDoc(userDocRef, {
-        quota: increment(-durationMinutes)
-      });
+      await updateDoc(userDocRef, { quota: increment(-durationMinutes) });
 
       const srt = result.map((sub, index) => `${index + 1}\n${sub.start} --> ${sub.end}\n${sub.text}\n`).join('\n');
       setSrtContent(srt);
-      setProgress('完成並已扣除額度！');
+      setProgress('完成！');
     } catch (err: any) {
       setError(err.message || "發生錯誤。");
     } finally {

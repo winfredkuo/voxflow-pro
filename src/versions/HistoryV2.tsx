@@ -8,7 +8,7 @@ import { User } from 'firebase/auth';
 interface Subtitle { start: string; end: string; text: string; }
 interface HistoryItem { id: string; filename: string; date: string; srtContent: string; }
 
-export default function HistoryV2({ user }: { user: User | null }) {
+export default function HistoryV2({ user, onOpenQuotaModal }: { user: User | null; onOpenQuotaModal: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [srtContent, setSrtContent] = useState<string | null>(null);
@@ -55,6 +55,7 @@ export default function HistoryV2({ user }: { user: User | null }) {
       const durationMinutes = await getAudioDuration(file);
       
       if (currentQuota < durationMinutes) {
+        onOpenQuotaModal(); // 觸發彈窗
         throw new Error(`額度不足。需 ${durationMinutes} 分鐘，剩餘 ${currentQuota} 分鐘。`);
       }
 
@@ -78,7 +79,7 @@ export default function HistoryV2({ user }: { user: User | null }) {
       const srt = result.map((sub, index) => `${index + 1}\n${sub.start} --> ${sub.end}\n${sub.text}\n`).join('\n');
       setSrtContent(srt);
       saveToHistory(file.name, srt);
-      setProgress('完成並已扣除額度！');
+      setProgress('完成！');
     } catch (err: any) { setError(err.message || "發生錯誤。"); } finally { setIsProcessing(false); }
   };
 
