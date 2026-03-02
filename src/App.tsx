@@ -26,7 +26,7 @@ function QuotaModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
           
           <div className="grid grid-cols-1 gap-3">
             <a 
-              href="mailto:your-email@example.com?subject=購買 VoxFlow Pro 額度" 
+              href="mailto:theoder@gmail.com?subject=購買 VoxFlow Pro 額度" 
               className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
             >
               <MessageCircle size={20} />
