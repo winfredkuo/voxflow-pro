@@ -36,7 +36,7 @@ export default function StableV1({ user, onOpenQuotaModal }: { user: User | null
       const durationMinutes = await getAudioDuration(file);
       
       if (currentQuota < durationMinutes) {
-        onOpenQuotaModal(); // 觸發彈窗
+        onOpenQuotaModal();
         throw new Error(`額度不足。此音檔需 ${durationMinutes} 分鐘。`);
       }
 

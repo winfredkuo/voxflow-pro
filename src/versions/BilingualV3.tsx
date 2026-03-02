@@ -59,7 +59,7 @@ export default function BilingualV3({ user, onOpenQuotaModal }: { user: User | n
       const durationMinutes = await getAudioDuration(file);
       
       if (currentQuota < durationMinutes) {
-        onOpenQuotaModal(); // 觸發彈窗
+        onOpenQuotaModal();
         throw new Error(`額度不足。需 ${durationMinutes} 分鐘，剩餘 ${currentQuota} 分鐘。`);
       }
 
