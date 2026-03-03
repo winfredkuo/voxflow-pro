@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db, signInWithGoogle, logOut } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { LogIn, LogOut, User as UserIcon, Coins, Sparkles, Loader2, X, MessageCircle, CreditCard } from 'lucide-react';
+import { doc, getDoc, setDoc, onSnapshot, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
+import { LogIn, LogOut, User as UserIcon, Coins, Sparkles, Loader2, X, MessageCircle, CreditCard, Settings, Search, Save } from 'lucide-react';
 import StableV1 from './versions/StableV1';
 import HistoryV2 from './versions/HistoryV2';
 import BilingualV3 from './versions/BilingualV3';
@@ -48,12 +48,148 @@ function QuotaModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   );
 }
 
+// 管理員面板組件
+function AdminPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [searchEmail, setSearchEmail] = useState('');
+  const [foundUser, setFoundUser] = useState<any>(null);
+  const [newQuota, setNewQuota] = useState<number>(0);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const handleSearch = async () => {
+    if (!searchEmail) return;
+    setIsSearching(true);
+    setMessage('');
+    try {
+      const q = query(collection(db, "users"), where("email", "==", searchEmail.trim()));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const userDoc = querySnapshot.docs[0];
+        setFoundUser({ id: userDoc.id, ...userDoc.data() });
+        setNewQuota(userDoc.data().quota || 0);
+      } else {
+        setFoundUser(null);
+        setMessage('找不到該使用者');
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage('搜尋發生錯誤');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!foundUser) return;
+    setIsUpdating(true);
+    try {
+      const userDocRef = doc(db, "users", foundUser.id);
+      await updateDoc(userDocRef, { quota: newQuota });
+      setMessage('額度更新成功！');
+      setFoundUser({ ...foundUser, quota: newQuota });
+    } catch (error) {
+      console.error(error);
+      setMessage('更新失敗');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+          <div className="flex items-center gap-2 text-indigo-600">
+            <Settings size={20} />
+            <h3 className="font-black text-lg">VoxFlow 管理員後台</h3>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-8 space-y-8 overflow-y-auto">
+          <div className="space-y-4">
+            <label className="text-sm font-bold text-slate-500 uppercase tracking-wider">搜尋使用者 Email</label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                  type="email" 
+                  value={searchEmail}
+                  onChange={(e) => setSearchEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                />
+              </div>
+              <button 
+                onClick={handleSearch}
+                disabled={isSearching}
+                className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all"
+              >
+                {isSearching ? <Loader2 className="animate-spin" size={20} /> : '搜尋'}
+              </button>
+            </div>
+          </div>
+
+          {message && (
+            <div className={`p-4 rounded-2xl text-sm font-bold text-center ${message.includes('成功') ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+              {message}
+            </div>
+          )}
+
+          {foundUser && (
+            <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 space-y-6 animate-in slide-in-from-bottom-4 duration-300">
+              <div className="flex items-center gap-4">
+                <img src={foundUser.photoURL} className="w-12 h-12 rounded-full border-2 border-white shadow-sm" />
+                <div>
+                  <h4 className="font-bold text-slate-900">{foundUser.displayName}</h4>
+                  <p className="text-xs text-slate-500">{foundUser.email}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">目前額度</p>
+                  <p className="text-2xl font-black text-indigo-600">{foundUser.quota} <span className="text-xs font-medium">min</span></p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">修改額度</p>
+                  <input 
+                    type="number" 
+                    value={newQuota}
+                    onChange={(e) => setNewQuota(parseInt(e.target.value) || 0)}
+                    className="w-full text-2xl font-black text-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <button 
+                onClick={handleUpdate}
+                disabled={isUpdating}
+                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 disabled:opacity-50 transition-all"
+              >
+                {isUpdating ? <Loader2 className="animate-spin" size={20} /> : <><Save size={20} /> 儲存更新</>}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [activeVersion, setActiveVersion] = useState<Version>('V3');
   const [user, setUser] = useState<User | null>(null);
   const [quota, setQuota] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [isQuotaModalOpen, setIsQuotaModalOpen] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const isAdmin = user?.email === 'theoder@gmail.com';
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -103,6 +239,7 @@ function App() {
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans">
       <QuotaModal isOpen={isQuotaModalOpen} onClose={() => setIsQuotaModalOpen(false)} />
+      <AdminPanel isOpen={isAdminPanelOpen} onClose={() => setIsAdminPanelOpen(false)} />
       
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/60 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -128,6 +265,15 @@ function App() {
                 </button>
                 
                 <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
+                  {isAdmin && (
+                    <button 
+                      onClick={() => setIsAdminPanelOpen(true)}
+                      className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"
+                      title="管理員後台"
+                    >
+                      <Settings size={20} />
+                    </button>
+                  )}
                   <img src={user.photoURL || ''} alt="User" className="w-8 h-8 rounded-full border border-slate-200" />
                   <button onClick={() => logOut()} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><LogOut size={20} /></button>
                 </div>
