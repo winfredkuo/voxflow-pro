@@ -1,24 +1,21 @@
-import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
-// --- 請將下方這段替換成您在 Firebase 看到的內容 ---
+// 這裡的設定請替換成您在 Firebase Console 取得的正式設定
 const firebaseConfig = {
-  apiKey: "AIzaSyBge5NcCflxCHiRzcAL7jOxDDWXUjgdxRE",
-  authDomain: "voxflow-pro.firebaseapp.com",
-  projectId: "voxflow-pro",
-  storageBucket: "voxflow-pro.firebasestorage.app",
-  messagingSenderId: "957058122655",
-  appId: "1:957058122655:web:c0f6655d7016697e1873aa"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBge5NcCflxCHiRzcAL7jOxDDWXUjgdxRE",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "voxflow-pro.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "voxflow-pro",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "voxflow-pro.appspot.com",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "957058122655",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:957058122655:web:c0f6655d7016697e1873aa"
 };
-// ----------------------------------------------
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const googleProvider = new GoogleAuthProvider();
+const googleProvider = new GoogleAuthProvider();
 
-// 登入函數
 export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
-// 登出函數
 export const logOut = () => signOut(auth);

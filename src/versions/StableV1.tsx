@@ -33,43 +33,86 @@ export default function StableV1({ user, onOpenQuotaModal }: { user: User | null
       const userDocRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(userDocRef);
       const currentQuota = docSnap.data()?.quota || 0;
-      const durationMinutes = await getAudioDuration(file);
-      
+      const durationSeconds = await new Promise<number>((resolve) => {
+        const audio = new Audio();
+        audio.src = URL.createObjectURL(file);
+        audio.onloadedmetadata = () => resolve(audio.duration);
+      });
+      const durationMinutes = Math.ceil(durationSeconds / 60);
+
       if (currentQuota < durationMinutes) {
         onOpenQuotaModal();
         throw new Error(`額度不足。此音檔需 ${durationMinutes} 分鐘。`);
       }
 
-      const reader = new FileReader();
-      const base64Data = await new Promise<string>((resolve) => {
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      setProgress('正在辨識 (使用高精度 AI 引擎)...');
+      
+      const formData = new FormData();
+      formData.append('audio', file);
+
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData,
       });
 
-      setProgress('正在辨識語音...');
-      const workerUrl = "https://odd-sky-f30e.theoder.workers.dev";
-      const payload = {
-        model: "gemini-3-flash-preview",
-        contents: [{ role: "user", parts: [{ inlineData: { mimeType: file.type || 'audio/mpeg', data: base64Data } }, { text: "請精確轉錄這段音檔。輸出格式必須為 JSON 陣列，包含 'start' (HH:MM:SS,mmm), 'end' (HH:MM:SS,mmm), 和 'text' 欄位。每條字幕的 'text' 長度絕對不能超過 15 個字。請根據語氣自然斷句，且「絕對不要」包含任何標點符號。" }] }],
-        config: { responseMimeType: "application/json" }
-      };
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || '辨識失敗');
+      }
 
-      const workerResponse = await fetch(workerUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      if (!workerResponse.ok) throw new Error("代理伺服器回應錯誤");
-      const data = await workerResponse.json();
-      const textResult = data.candidates[0].content.parts[0].text;
-      let result: Subtitle[] = JSON.parse(textResult);
+      const result = await response.json();
 
       await updateDoc(userDocRef, { quota: increment(-durationMinutes) });
 
-      const srt = result.map((sub, index) => `${index + 1}\n${sub.start} --> ${sub.end}\n${sub.text}\n`).join('\n');
-      setSrtContent(srt);
+      const formatTime = (seconds: any) => {
+        let s = parseFloat(seconds);
+        if (isNaN(s)) {
+          // 嘗試解析 HH:MM:SS 格式
+          if (typeof seconds === 'string' && seconds.includes(':')) {
+            const parts = seconds.split(':').map(parseFloat);
+            if (parts.length === 3) s = parts[0] * 3600 + parts[1] * 60 + parts[2];
+            else if (parts.length === 2) s = parts[0] * 60 + parts[1];
+          }
+        }
+        if (isNaN(s) || s < 0) s = 0;
+
+        const date = new Date(0);
+        date.setMilliseconds(s * 1000);
+        try {
+          const timeString = date.toISOString().substr(11, 12);
+          return timeString.replace('.', ',');
+        } catch (e) {
+          return "00:00:00,000";
+        }
+      };
+
+      // 格式化為標準 SRT (實作連續時間碼：結尾接下一句開頭)
+      const srt = result.map((sub, index) => {
+        const start = formatTime(Number(sub.start));
+        // 如果不是最後一句，結尾等於下一句的開頭，實現無縫銜接
+        const endTime = (index < result.length - 1) ? Number(result[index + 1].start) : Number(sub.end);
+        const end = formatTime(endTime);
+        return `${index + 1}\r\n${start} --> ${end}\r\n${sub.text}\r\n`;
+      }).join('\r\n');
+
+      setSrtContent('\ufeff' + srt);
       setProgress('完成！');
     } catch (err: any) {
       setError(err.message || "發生錯誤。");
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const downloadSrt = (content: string, filename: string) => {
+    // 加入 UTF-8 BOM (\ufeff) 確保剪輯軟體正確識別編碼
+    const blob = new Blob(["\ufeff", content], { type: 'text/srt;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -79,7 +122,7 @@ export default function StableV1({ user, onOpenQuotaModal }: { user: User | null
           <ShieldCheck size={14} />
           <span>VoxFlow V1 Stable</span>
         </div>
-        <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900">Vox<span className="text-indigo-600">Flow</span> V1</h1>
+        <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900">VoxFlow <span className="text-indigo-600">Stable</span></h1>
         <p className="text-slate-500 text-lg">基準穩定版：專注於極速、精準的單語轉錄。</p>
       </header>
 
@@ -106,7 +149,7 @@ export default function StableV1({ user, onOpenQuotaModal }: { user: User | null
             <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center"><CheckCircle2 size={24} /></div>
             <div><p className="font-bold text-slate-900 text-lg">字幕已就緒</p><p className="text-slate-400 text-sm">已自動從額度扣除分鐘數</p></div>
           </div>
-          <button onClick={() => { const blob = new Blob([srtContent!], { type: 'text/plain' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${file?.name.split('.')[0]}.srt`; a.click(); }} className="px-8 py-4 bg-emerald-600 text-white font-bold rounded-2xl flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"><Download size={20} /> 下載 SRT</button>
+          <button onClick={() => downloadSrt(srtContent!, `${file?.name.split('.')[0]}.srt`)} className="px-8 py-4 bg-emerald-600 text-white font-bold rounded-2xl flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"><Download size={20} /> 下載 SRT</button>
         </section>
       )}
     </div>

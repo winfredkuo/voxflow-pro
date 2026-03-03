@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { GoogleGenAI, Type } from "@google/genai";
 import { Upload, FileAudio, Download, Loader2, CheckCircle2, AlertCircle, Trash2, Clock, Languages, History as HistoryIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { db } from '../lib/firebase';
@@ -56,32 +57,121 @@ export default function BilingualV3({ user, onOpenQuotaModal }: { user: User | n
       const userDocRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(userDocRef);
       const currentQuota = docSnap.data()?.quota || 0;
-      const durationMinutes = await getAudioDuration(file);
+      const durationSeconds = await new Promise<number>((resolve) => {
+        const audio = new Audio();
+        audio.src = URL.createObjectURL(file);
+        audio.onloadedmetadata = () => resolve(audio.duration);
+      });
+      const durationMinutes = Math.ceil(durationSeconds / 60);
       
       if (currentQuota < durationMinutes) {
         onOpenQuotaModal();
         throw new Error(`額度不足。需 ${durationMinutes} 分鐘，剩餘 ${currentQuota} 分鐘。`);
       }
 
-      const base64Data = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      setProgress(`正在辨識 (使用高精度 AI 引擎)...`);
+      
+      const formData = new FormData();
+      formData.append('audio', file);
+
+      const transcribeResponse = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData,
       });
 
-      setProgress(`正在轉錄並翻譯至 ${targetLang}...`);
-      const workerUrl = "https://odd-sky-f30e.theoder.workers.dev";
-      const payload = { model: "gemini-3-flash-preview", contents: [{ role: "user", parts: [{ inlineData: { mimeType: file.type || 'audio/mpeg', data: base64Data } }, { text: `請精確轉錄這段音檔並翻譯成 ${targetLang}。輸出格式必須為 JSON 陣列，包含 'start' (HH:MM:SS,mmm), 'end' (HH:MM:SS,mmm), 'original' (原始語言), 和 'translated' (翻譯後的 ${targetLang}) 欄位。每條字幕的文字長度絕對不能超過 15 個字。請「絕對不要」在任何語言中包含標點符號。` }] }], config: { responseMimeType: "application/json" } };
-      const workerResponse = await fetch(workerUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      if (!workerResponse.ok) throw new Error("代理伺服器回應錯誤");
-      const data = await workerResponse.json();
-      const textResult = data.candidates[0].content.parts[0].text;
-      let segments: SubtitleSegment[] = JSON.parse(textResult);
+      if (!transcribeResponse.ok) {
+        const errorData = await transcribeResponse.json();
+        throw new Error(errorData.error || '辨識失敗');
+      }
+
+      const transcriptionResult = await transcribeResponse.json();
+
+      setProgress(`正在翻譯為 ${targetLang} (使用專業翻譯引擎)...`);
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const model = "gemini-3-flash-preview";
+
+      const translationResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{
+          role: "user",
+          parts: [
+            { text: `你是一位專業的影視字幕翻譯師。以下是音訊的轉錄內容（包含時間戳）。
+請將每一段內容翻譯為 ${targetLang}。
+
+轉錄內容：
+${JSON.stringify(transcriptionResult, null, 2)}
+
+核心規則：
+1. **信雅達**：翻譯必須自然流暢，符合影視字幕風格。
+2. **保持結構**：請回傳與輸入相同結構的 JSON 陣列，但增加 "original" 和 "translated" 欄位。
+3. **嚴格 JSON**：只回傳 JSON 陣列，不要有其他文字。` }
+          ]
+        }],
+        config: {
+          systemInstruction: `你是一個專業的影視字幕翻譯引擎。你必須精確地將轉錄內容翻譯為目標語言，並保持原有的時間戳結構。`,
+          responseMimeType: "application/json",
+          temperature: 0,
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                start: { type: Type.NUMBER },
+                end: { type: Type.NUMBER },
+                original: { type: Type.STRING },
+                translated: { type: Type.STRING }
+              },
+              required: ["start", "end", "original", "translated"]
+            }
+          }
+        }
+      });
+
+      const textResult = translationResponse.text;
+      if (!textResult) throw new Error("翻譯失敗");
+      let segments: any[] = JSON.parse(textResult);
 
       await updateDoc(userDocRef, { quota: increment(-durationMinutes) });
 
-      const originalSrt = segments.map((seg, index) => `${index + 1}\n${seg.start} --> ${seg.end}\n${seg.original}\n`).join('\n');
-      const translatedSrt = segments.map((seg, index) => `${index + 1}\n${seg.start} --> ${seg.end}\n${seg.translated}\n`).join('\n');
+      // 輔助函數：將秒數轉換為 HH:MM:SS,mmm
+      const formatTime = (seconds: any) => {
+        let s = parseFloat(seconds);
+        if (isNaN(s)) {
+          // 嘗試解析 HH:MM:SS 格式
+          if (typeof seconds === 'string' && seconds.includes(':')) {
+            const parts = seconds.split(':').map(parseFloat);
+            if (parts.length === 3) s = parts[0] * 3600 + parts[1] * 60 + parts[2];
+            else if (parts.length === 2) s = parts[0] * 60 + parts[1];
+          }
+        }
+        if (isNaN(s) || s < 0) s = 0;
+
+        const date = new Date(0);
+        date.setMilliseconds(s * 1000);
+        try {
+          const timeString = date.toISOString().substr(11, 12);
+          return timeString.replace('.', ',');
+        } catch (e) {
+          return "00:00:00,000";
+        }
+      };
+
+      // 格式化為標準 SRT (實作連續時間碼：結尾接下一句開頭)
+      const formatSrt = (segments: any[], type: 'original' | 'translated') => {
+        return segments.map((seg, index) => {
+          const start = formatTime(Number(seg.start));
+          // 如果不是最後一句，結尾等於下一句的開頭，實現無縫銜接
+          const endTime = (index < segments.length - 1) ? Number(segments[index + 1].start) : Number(seg.end);
+          const end = formatTime(endTime);
+          const text = type === 'original' ? seg.original : seg.translated;
+          return `${index + 1}\r\n${start} --> ${end}\r\n${text}\r\n`;
+        }).join('\r\n');
+      };
+
+      const originalSrt = '\ufeff' + formatSrt(segments, 'original');
+      const translatedSrt = '\ufeff' + formatSrt(segments, 'translated');
+      
       setResults({ original: originalSrt, translated: translatedSrt });
       saveToHistory(file.name, originalSrt, translatedSrt, targetLang);
       setProgress('完成！');
@@ -89,19 +179,21 @@ export default function BilingualV3({ user, onOpenQuotaModal }: { user: User | n
   };
 
   const downloadFile = (content: string, filename: string) => {
-    const blob = new Blob([content], { type: 'text/plain' });
+    // 加入 UTF-8 BOM (\ufeff) 確保剪輯軟體正確識別編碼
+    const blob = new Blob(["\ufeff", content], { type: 'text/srt;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
     a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
     <div className="animate-in fade-in duration-500 space-y-12">
       <header className="text-center space-y-4">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold uppercase tracking-wider"><Languages size={14} /><span>VoxFlow V3 Bilingual</span></div>
-        <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900">Vox<span className="text-indigo-600">Flow</span> V3</h1>
+        <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900">VoxFlow <span className="text-indigo-600">Bilingual</span></h1>
         <p className="text-slate-500 text-lg max-w-md mx-auto">專業版：支援雙語分離轉錄，一鍵生成兩種語言的 SRT 檔案。</p>
       </header>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

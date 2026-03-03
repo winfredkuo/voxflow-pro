@@ -82,7 +82,7 @@ function App() {
         email: currentUser.email,
         displayName: currentUser.displayName,
         photoURL: currentUser.photoURL,
-        quota: 10,
+        quota: 60,
         createdAt: new Date().toISOString()
       });
     }
@@ -152,7 +152,7 @@ function App() {
                       activeVersion === v ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    {v === 'V1' ? 'V1 Stable' : 'V3 Bilingual'}
+                    {v === 'V1' ? 'Stable' : 'Bilingual'}
                   </button>
                 ))}
               </div>
