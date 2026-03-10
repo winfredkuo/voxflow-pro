@@ -70,7 +70,11 @@ export default function StableV1({ user, onOpenQuotaModal }: { user: User | null
         result = JSON.parse(responseText);
       } catch (e) {
         console.error("Invalid JSON response from server:", responseText);
-        throw new Error(`伺服器連線中斷或超時。這通常是因為音檔過大或處理時間過長。請嘗試上傳較短的音檔。`);
+        let errMsg = `伺服器連線中斷或超時。這通常是因為音檔過大或處理時間過長。請嘗試上傳較短的音檔。`;
+        if (responseText.includes('Cookie check') || responseText.includes('AI Studio Logo')) {
+          errMsg = `認證過期或被阻擋。請重新整理網頁，或在新分頁中開啟應用程式。`;
+        }
+        throw new Error(errMsg);
       }
 
       if (!response.ok) {
