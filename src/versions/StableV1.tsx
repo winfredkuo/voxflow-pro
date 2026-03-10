@@ -69,10 +69,12 @@ export default function StableV1({ user, onOpenQuotaModal }: { user: User | null
       try {
         result = JSON.parse(responseText);
       } catch (e) {
-        console.error("Invalid JSON response from server:", responseText);
         let errMsg = `伺服器連線中斷或超時。這通常是因為音檔過大或處理時間過長。請嘗試上傳較短的音檔。`;
         if (responseText.includes('Cookie check') || responseText.includes('AI Studio Logo')) {
-          errMsg = `認證過期或被阻擋。請重新整理網頁，或在新分頁中開啟應用程式。`;
+          errMsg = `⚠️ 瀏覽器阻擋了安全驗證！請點擊右上角的「在新分頁中開啟 (Open in new tab)」來使用此功能。`;
+          console.error("Cookie check intercepted the request. Please open in a new tab.");
+        } else {
+          console.error("Invalid JSON response from server (truncated):", responseText.substring(0, 100));
         }
         throw new Error(errMsg);
       }
