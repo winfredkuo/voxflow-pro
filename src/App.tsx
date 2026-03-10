@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { auth, db, signInWithGoogle, logOut } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
-import { LogIn, LogOut, User as UserIcon, Coins, Sparkles, Loader2, X, MessageCircle, CreditCard, Settings, Search, Save } from 'lucide-react';
+import { LogIn, LogOut, User as UserIcon, Coins, Sparkles, Loader2, X, MessageCircle, CreditCard, Settings, Search, Save, AlertCircle } from 'lucide-react';
 import StableV1 from './versions/StableV1';
 import HistoryV2 from './versions/HistoryV2';
 import BilingualV3 from './versions/BilingualV3';
@@ -182,6 +182,24 @@ function AdminPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   );
 }
 
+function NoticeBanner() {
+  return (
+    <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-5 mb-8 flex items-start gap-4 shadow-sm animate-in fade-in slide-in-from-top-4 duration-500">
+      <div className="bg-blue-100 text-blue-600 p-2 rounded-xl shrink-0">
+        <AlertCircle size={24} />
+      </div>
+      <div className="text-sm text-blue-800 space-y-2">
+        <p className="font-black text-base">💡 系統使用須知</p>
+        <ul className="list-disc list-inside space-y-1 ml-1 opacity-90">
+          <li><strong>啟動時間：</strong>本站使用免費伺服器，若超過 15 分鐘無人使用會進入休眠。首次開啟或上傳時，可能需要等待約 1 分鐘喚醒伺服器。</li>
+          <li><strong>隱私保護：</strong>為保護您的隱私與節省空間，音檔在處理完成後會<strong>立即永久刪除</strong>，不會保留在伺服器上。</li>
+          <li><strong>資料保存：</strong>產生的 SRT 字幕檔請務必<strong>盡快下載保存</strong>。若重新整理網頁或離開，未下載的字幕資料將會消失。</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [activeVersion, setActiveVersion] = useState<Version>('V3');
   const [user, setUser] = useState<User | null>(null);
@@ -286,6 +304,7 @@ function App() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-6 py-12">
+        <NoticeBanner />
         {user ? (
           <div className="space-y-12">
             <div className="flex justify-center">
